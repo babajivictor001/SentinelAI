@@ -1,14 +1,16 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
 import shutil
 import os
 
 from src.analyzer import analyze_logs
 from src.threat_engine import calculate_risk
 
-# =====================================================
+
+# ============================================================
 # FastAPI Configuration
-# =====================================================
+# ============================================================
 
 app = FastAPI(
     title="SentinelAI API",
@@ -16,29 +18,33 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# =====================================================
-# Enable CORS (Allows Lovable Frontend to connect)
-# =====================================================
+
+# ============================================================
+# CORS Configuration
+# Allows Lovable frontend to communicate with the API
+# ============================================================
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],      # Change later for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# =====================================================
-# Ensure Logs Folder Exists
-# =====================================================
+
+# ============================================================
+# Configuration
+# ============================================================
 
 UPLOAD_FOLDER = "logs"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# =====================================================
+
+# ============================================================
 # HOME
-# =====================================================
+# ============================================================
 
 @app.get("/")
 def home():
@@ -50,9 +56,10 @@ def home():
         "message": "Welcome to SentinelAI API"
     }
 
-# =====================================================
+
+# ============================================================
 # HEALTH CHECK
-# =====================================================
+# ============================================================
 
 @app.get("/health")
 def health():
@@ -62,72 +69,281 @@ def health():
         "server": "online"
     }
 
-# =====================================================
+
+# ============================================================
 # ANALYZE DEFAULT SAMPLE LOG
-# =====================================================
+# ============================================================
 
 @app.get("/analyze")
 def analyze():
 
-    logfile = "logs/sample_log.txt"
+    try:
 
-    if not os.path.exists(logfile):
-        raise HTTPException(
-            status_code=404,
-            detail="sample_log.txt not found."
+        logfile = os.path.join(
+            UPLOAD_FOLDER,
+            "sample_log.txt"
         )
 
-    with open(logfile, "r") as file:
-        results = analyze_logs(file)
+        # ----------------------------------------------------
+        # Check if sample log exists
+        # ----------------------------------------------------
 
-    risk = calculate_risk(results)
+        if not os.path.exists(logfile):
 
-    return {
+            raise HTTPException(
+                status_code=404,
+                detail="sample_log.txt not found."
+            )
 
-        "total_events": results["total_events"],
+        # ----------------------------------------------------
+        # Read log file
+        # ----------------------------------------------------
 
-        "info_events": results["info"],
+        with open(logfile, "r", encoding="utf-8") as file:
 
-        "warning_events": results["warning"],
+            results = analyze_logs(file)
 
-        "error_events": results["error"],
+        # ----------------------------------------------------
+        # Calculate security risk
+        # ----------------------------------------------------
 
-        "critical_events": results["critical"],
+        risk = calculate_risk(results)
 
-        "failed_logins": results["failed_logins"],
+        # ----------------------------------------------------
+        # Return clean API response
+        # ----------------------------------------------------
 
-        "suspicious_ips": list(results["suspicious_ips"]),
+        return {
 
-        "login_attempts": results["login_attempts"],
+            "status": "success",
 
-        "risk_level": risk["level"],
+            "analysis": {
 
-        "risk_score": risk["score"]
+                "total_events": results.get(
+                    "total_events",
+                    0
+                ),
 
-    }
+                "info_events": results.get(
+                    "info",
+                    0
+                ),
 
-# =====================================================
-# UPLOAD LOG FILE
-# =====================================================
+                "warning_events": results.get(
+                    "warning",
+                    0
+                ),
+
+                "error_events": results.get(
+                    "error",
+                    0
+                ),
+
+                "critical_events": results.get(
+                    "critical",
+                    0
+                ),
+
+                "failed_logins": results.get(
+                    "failed_logins",
+                    0
+                ),
+
+                "suspicious_ips": results.get(
+                    "suspicious_ips",
+                    []
+                ),
+
+                "login_attempts": results.get(
+                    "login_attempts",
+                    {}
+                )
+
+            },
+
+            "risk": {
+
+                "level": risk.get(
+                    "level",
+                    "UNKNOWN"
+                ),
+
+                "score": risk.get(
+                    "score",
+                    0
+                )
+
+            }
+
+        }
+
+    except HTTPException:
+
+        raise
+
+    except Exception as e:
+
+        return {
+
+            "status": "error",
+
+            "error": type(e).__name__,
+
+            "message": str(e)
+
+        }
+
+
+# ============================================================
+# UPLOAD AND ANALYZE LOG FILE
+# ============================================================
 
 @app.post("/upload-log")
-async def upload_log(file: UploadFile = File(...)):
+async def upload_log(
+    file: UploadFile = File(...)
+):
 
-    filepath = os.path.join(
-        UPLOAD_FOLDER,
-        file.filename
-    )
+    try:
 
-    with open(filepath, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        # ----------------------------------------------------
+        # Validate file
+        # ----------------------------------------------------
 
-    with open(filepath, "r") as logfile:
-        results = analyze_logs(logfile)
+        if not file.filename:
 
-    risk = calculate_risk(results)
+            raise HTTPException(
+                status_code=400,
+                detail="No file selected."
+            )
 
-    return {
-        "filename": file.filename,
-        "analysis": results,
-        "risk": risk
-    }
+        # ----------------------------------------------------
+        # Create safe filename
+        # ----------------------------------------------------
+
+        filename = os.path.basename(
+            file.filename
+        )
+
+        filepath = os.path.join(
+            UPLOAD_FOLDER,
+            filename
+        )
+
+        # ----------------------------------------------------
+        # Save uploaded file
+        # ----------------------------------------------------
+
+        with open(filepath, "wb") as buffer:
+
+            shutil.copyfileobj(
+                file.file,
+                buffer
+            )
+
+        # ----------------------------------------------------
+        # Analyze uploaded log
+        # ----------------------------------------------------
+
+        with open(
+            filepath,
+            "r",
+            encoding="utf-8"
+        ) as logfile:
+
+            results = analyze_logs(
+                logfile
+            )
+
+        # ----------------------------------------------------
+        # Calculate risk
+        # ----------------------------------------------------
+
+        risk = calculate_risk(
+            results
+        )
+
+        # ----------------------------------------------------
+        # Return analysis
+        # ----------------------------------------------------
+
+        return {
+
+            "status": "success",
+
+            "filename": filename,
+
+            "analysis": {
+
+                "total_events": results.get(
+                    "total_events",
+                    0
+                ),
+
+                "info_events": results.get(
+                    "info",
+                    0
+                ),
+
+                "warning_events": results.get(
+                    "warning",
+                    0
+                ),
+
+                "error_events": results.get(
+                    "error",
+                    0
+                ),
+
+                "critical_events": results.get(
+                    "critical",
+                    0
+                ),
+
+                "failed_logins": results.get(
+                    "failed_logins",
+                    0
+                ),
+
+                "suspicious_ips": results.get(
+                    "suspicious_ips",
+                    []
+                ),
+
+                "login_attempts": results.get(
+                    "login_attempts",
+                    {}
+                )
+
+            },
+
+            "risk": {
+
+                "level": risk.get(
+                    "level",
+                    "UNKNOWN"
+                ),
+
+                "score": risk.get(
+                    "score",
+                    0
+                )
+
+            }
+
+        }
+
+    except HTTPException:
+
+        raise
+
+    except Exception as e:
+
+        return {
+
+            "status": "error",
+
+            "error": type(e).__name__,
+
+            "message": str(e)
+
+        }

@@ -12,7 +12,16 @@ def analyze_logs(file):
     suspicious_ips = set()
     login_attempts = {}
 
+    total_events = 0
+
     for line in file:
+
+        line = line.strip()
+
+        if not line:
+            continue
+
+        total_events += 1
 
         if "INFO" in line:
             info_count += 1
@@ -32,32 +41,42 @@ def analyze_logs(file):
 
             ip = extract_ip(line)
 
-            suspicious_ips.add(ip)
+            if ip:
+                suspicious_ips.add(ip)
 
-            if ip in login_attempts:
-                login_attempts[ip] += 1
-            else:
-                login_attempts[ip] = 1
+                if ip in login_attempts:
+                    login_attempts[ip] += 1
+                else:
+                    login_attempts[ip] = 1
 
         if "Multiple failed login attempts" in line:
 
             ip = extract_ip(line)
 
-            suspicious_ips.add(ip)
+            if ip:
+                suspicious_ips.add(ip)
 
-            if ip in login_attempts:
-                login_attempts[ip] += 2
-            else:
-                login_attempts[ip] = 2
+                if ip in login_attempts:
+                    login_attempts[ip] += 2
+                else:
+                    login_attempts[ip] = 2
 
     return {
 
+        "total_events": total_events,
+
         "info": info_count,
+
         "warning": warning_count,
+
         "error": error_count,
+
         "critical": critical_count,
-        "failed": failed_login_count,
-        "ips": suspicious_ips,
-        "attempts": login_attempts
+
+        "failed_logins": failed_login_count,
+
+        "suspicious_ips": list(suspicious_ips),
+
+        "login_attempts": login_attempts
 
     }

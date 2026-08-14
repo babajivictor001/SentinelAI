@@ -1,16 +1,29 @@
 def calculate_risk(data):
 
+    warning_count = data.get("warning", 0)
+    error_count = data.get("error", 0)
+    critical_count = data.get("critical", 0)
+    failed_login_count = data.get("failed_logins", 0)
+
+    # Calculate security risk score
     score = (
-        data["warning"]
-        + data["error"] * 2
-        + data["critical"] * 5
+        warning_count
+        + (error_count * 2)
+        + (critical_count * 5)
+        + (failed_login_count * 2)
     )
 
-    if score >= 8:
-        return "HIGH"
+    # Determine risk level
+    if score >= 15:
+        level = "HIGH"
 
-    elif score >= 4:
-        return "MEDIUM"
+    elif score >= 7:
+        level = "MEDIUM"
 
     else:
-        return "LOW"
+        level = "LOW"
+
+    return {
+        "level": level,
+        "score": score
+    }

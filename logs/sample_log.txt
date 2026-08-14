@@ -1,0 +1,15 @@
+2026-07-21 08:00:15 INFO User john logged in from 192.168.1.10
+
+2026-07-21 08:05:33 WARNING Failed login attempt for admin from 203.45.22.11
+
+2026-07-21 08:10:42 INFO User mary accessed payroll database
+
+2026-07-21 08:12:20 CRITICAL Multiple failed login attempts detected from 203.45.22.11
+
+2026-07-21 08:20:50 INFO User john logged out
+2026-07-21 08:25:11 ERROR Antivirus service stopped
+
+2026-07-21 08:26:01 WARNING Failed login attempt from 192.168.1.25
+2026-07-21 08:30:12 WARNING Failed login attempt for admin from 203.45.22.11
+
+2026-07-21 08:31:15 WARNING Failed login attempt for admin from 203.45.22.11

@@ -14,12 +14,18 @@ def analyze_logs(file):
 
     total_events = 0
 
+    # Store original log lines for the detection engine
+    log_lines = []
+
     for line in file:
 
         line = line.strip()
 
         if not line:
             continue
+
+        # Preserve the line for threat detection
+        log_lines.append(line)
 
         total_events += 1
 
@@ -42,6 +48,7 @@ def analyze_logs(file):
             ip = extract_ip(line)
 
             if ip:
+
                 suspicious_ips.add(ip)
 
                 if ip in login_attempts:
@@ -54,6 +61,7 @@ def analyze_logs(file):
             ip = extract_ip(line)
 
             if ip:
+
                 suspicious_ips.add(ip)
 
                 if ip in login_attempts:
@@ -77,6 +85,8 @@ def analyze_logs(file):
 
         "suspicious_ips": list(suspicious_ips),
 
-        "login_attempts": login_attempts
+        "login_attempts": login_attempts,
 
+        # Raw lines used by the detection engine
+        "lines": log_lines
     }

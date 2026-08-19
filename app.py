@@ -6,6 +6,9 @@ import os
 
 from src.analyzer import analyze_logs
 from src.threat_engine import calculate_risk
+from src.detection_engine import detect_attacks
+from src.ioc_extractor import extract_iocs
+from src.mitre_mapping import map_detections_to_mitre
 
 
 # ============================================================
@@ -21,7 +24,6 @@ app = FastAPI(
 
 # ============================================================
 # CORS Configuration
-# Allows Lovable frontend to communicate with the API
 # ============================================================
 
 app.add_middleware(
@@ -39,7 +41,10 @@ app.add_middleware(
 
 UPLOAD_FOLDER = "logs"
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(
+    UPLOAD_FOLDER,
+    exist_ok=True
+)
 
 
 # ============================================================
@@ -84,10 +89,6 @@ def analyze():
             "sample_log.txt"
         )
 
-        # ----------------------------------------------------
-        # Check if sample log exists
-        # ----------------------------------------------------
-
         if not os.path.exists(logfile):
 
             raise HTTPException(
@@ -96,21 +97,65 @@ def analyze():
             )
 
         # ----------------------------------------------------
-        # Read log file
+        # Read log
         # ----------------------------------------------------
 
-        with open(logfile, "r", encoding="utf-8") as file:
+        with open(
+            logfile,
+            "r",
+            encoding="utf-8"
+        ) as file:
 
             results = analyze_logs(file)
 
         # ----------------------------------------------------
-        # Calculate security risk
+        # Calculate risk
         # ----------------------------------------------------
 
-        risk = calculate_risk(results)
+        risk = calculate_risk(
+            results
+        )
 
         # ----------------------------------------------------
-        # Return clean API response
+        # Detect attacks
+        # ----------------------------------------------------
+
+        detections = detect_attacks(
+            results.get(
+                "lines",
+                []
+            ),
+            results.get(
+                "login_attempts",
+                {}
+            ),
+            results.get(
+                "failed_logins",
+                0
+            )
+        )
+
+        # ----------------------------------------------------
+        # Extract IOCs
+        # ----------------------------------------------------
+
+        iocs = extract_iocs(
+            results.get(
+                "lines",
+                []
+            )
+        )
+
+        # ----------------------------------------------------
+        # Map detections to MITRE ATT&CK
+        # ----------------------------------------------------
+
+        mitre = map_detections_to_mitre(
+            detections
+        )
+
+        # ----------------------------------------------------
+        # Return response
         # ----------------------------------------------------
 
         return {
@@ -173,7 +218,13 @@ def analyze():
                     0
                 )
 
-            }
+            },
+
+            "detections": detections,
+
+            "iocs": iocs,
+
+            "mitre_attack": mitre
 
         }
 
@@ -217,7 +268,7 @@ async def upload_log(
             )
 
         # ----------------------------------------------------
-        # Create safe filename
+        # Safe filename
         # ----------------------------------------------------
 
         filename = os.path.basename(
@@ -233,7 +284,10 @@ async def upload_log(
         # Save uploaded file
         # ----------------------------------------------------
 
-        with open(filepath, "wb") as buffer:
+        with open(
+            filepath,
+            "wb"
+        ) as buffer:
 
             shutil.copyfileobj(
                 file.file,
@@ -263,7 +317,45 @@ async def upload_log(
         )
 
         # ----------------------------------------------------
-        # Return analysis
+        # Detect attacks
+        # ----------------------------------------------------
+
+        detections = detect_attacks(
+            results.get(
+                "lines",
+                []
+            ),
+            results.get(
+                "login_attempts",
+                {}
+            ),
+            results.get(
+                "failed_logins",
+                0
+            )
+        )
+
+        # ----------------------------------------------------
+        # Extract IOCs
+        # ----------------------------------------------------
+
+        iocs = extract_iocs(
+            results.get(
+                "lines",
+                []
+            )
+        )
+
+        # ----------------------------------------------------
+        # Map detections to MITRE ATT&CK
+        # ----------------------------------------------------
+
+        mitre = map_detections_to_mitre(
+            detections
+        )
+
+        # ----------------------------------------------------
+        # Return response
         # ----------------------------------------------------
 
         return {
@@ -328,7 +420,13 @@ async def upload_log(
                     0
                 )
 
-            }
+            },
+
+            "detections": detections,
+
+            "iocs": iocs,
+
+            "mitre_attack": mitre
 
         }
 

@@ -9,6 +9,7 @@ from src.threat_engine import calculate_risk
 from src.detection_engine import detect_attacks
 from src.ioc_extractor import extract_iocs
 from src.mitre_mapping import map_detections_to_mitre
+from src.enrichment import enrich_security_findings
 
 
 # ============================================================
@@ -45,6 +46,93 @@ os.makedirs(
     UPLOAD_FOLDER,
     exist_ok=True
 )
+
+
+# ============================================================
+# INTERNAL ANALYSIS PIPELINE
+# ============================================================
+
+def process_log(file_path: str):
+
+    # --------------------------------------------------------
+    # Read log
+    # --------------------------------------------------------
+
+    with open(
+        file_path,
+        "r",
+        encoding="utf-8"
+    ) as logfile:
+
+        results = analyze_logs(
+            logfile
+        )
+
+    # --------------------------------------------------------
+    # Calculate risk
+    # --------------------------------------------------------
+
+    risk = calculate_risk(
+        results
+    )
+
+    # --------------------------------------------------------
+    # Detect attacks
+    # --------------------------------------------------------
+
+    detections = detect_attacks(
+        results.get(
+            "lines",
+            []
+        ),
+        results.get(
+            "login_attempts",
+            {}
+        ),
+        results.get(
+            "failed_logins",
+            0
+        )
+    )
+
+    # --------------------------------------------------------
+    # Extract IOCs
+    # --------------------------------------------------------
+
+    iocs = extract_iocs(
+        results.get(
+            "lines",
+            []
+        )
+    )
+
+    # --------------------------------------------------------
+    # MITRE ATT&CK mapping
+    # --------------------------------------------------------
+
+    mitre_attack = map_detections_to_mitre(
+        detections
+    )
+
+    # --------------------------------------------------------
+    # Security enrichment
+    # --------------------------------------------------------
+
+    enrichment = enrich_security_findings(
+        detections=detections,
+        risk=risk,
+        iocs=iocs,
+        mitre_attack=mitre_attack
+    )
+
+    return (
+        results,
+        risk,
+        detections,
+        iocs,
+        mitre_attack,
+        enrichment
+    )
 
 
 # ============================================================
@@ -96,67 +184,16 @@ def analyze():
                 detail="sample_log.txt not found."
             )
 
-        # ----------------------------------------------------
-        # Read log
-        # ----------------------------------------------------
-
-        with open(
-            logfile,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            results = analyze_logs(file)
-
-        # ----------------------------------------------------
-        # Calculate risk
-        # ----------------------------------------------------
-
-        risk = calculate_risk(
-            results
+        (
+            results,
+            risk,
+            detections,
+            iocs,
+            mitre_attack,
+            enrichment
+        ) = process_log(
+            logfile
         )
-
-        # ----------------------------------------------------
-        # Detect attacks
-        # ----------------------------------------------------
-
-        detections = detect_attacks(
-            results.get(
-                "lines",
-                []
-            ),
-            results.get(
-                "login_attempts",
-                {}
-            ),
-            results.get(
-                "failed_logins",
-                0
-            )
-        )
-
-        # ----------------------------------------------------
-        # Extract IOCs
-        # ----------------------------------------------------
-
-        iocs = extract_iocs(
-            results.get(
-                "lines",
-                []
-            )
-        )
-
-        # ----------------------------------------------------
-        # Map detections to MITRE ATT&CK
-        # ----------------------------------------------------
-
-        mitre = map_detections_to_mitre(
-            detections
-        )
-
-        # ----------------------------------------------------
-        # Return response
-        # ----------------------------------------------------
 
         return {
 
@@ -224,7 +261,9 @@ def analyze():
 
             "iocs": iocs,
 
-            "mitre_attack": mitre
+            "mitre_attack": mitre_attack,
+
+            "enrichment": enrichment
 
         }
 
@@ -281,7 +320,7 @@ async def upload_log(
         )
 
         # ----------------------------------------------------
-        # Save uploaded file
+        # Save uploaded log
         # ----------------------------------------------------
 
         with open(
@@ -295,68 +334,19 @@ async def upload_log(
             )
 
         # ----------------------------------------------------
-        # Analyze uploaded log
+        # Process uploaded log
         # ----------------------------------------------------
 
-        with open(
-            filepath,
-            "r",
-            encoding="utf-8"
-        ) as logfile:
-
-            results = analyze_logs(
-                logfile
-            )
-
-        # ----------------------------------------------------
-        # Calculate risk
-        # ----------------------------------------------------
-
-        risk = calculate_risk(
-            results
+        (
+            results,
+            risk,
+            detections,
+            iocs,
+            mitre_attack,
+            enrichment
+        ) = process_log(
+            filepath
         )
-
-        # ----------------------------------------------------
-        # Detect attacks
-        # ----------------------------------------------------
-
-        detections = detect_attacks(
-            results.get(
-                "lines",
-                []
-            ),
-            results.get(
-                "login_attempts",
-                {}
-            ),
-            results.get(
-                "failed_logins",
-                0
-            )
-        )
-
-        # ----------------------------------------------------
-        # Extract IOCs
-        # ----------------------------------------------------
-
-        iocs = extract_iocs(
-            results.get(
-                "lines",
-                []
-            )
-        )
-
-        # ----------------------------------------------------
-        # Map detections to MITRE ATT&CK
-        # ----------------------------------------------------
-
-        mitre = map_detections_to_mitre(
-            detections
-        )
-
-        # ----------------------------------------------------
-        # Return response
-        # ----------------------------------------------------
 
         return {
 
@@ -426,7 +416,9 @@ async def upload_log(
 
             "iocs": iocs,
 
-            "mitre_attack": mitre
+            "mitre_attack": mitre_attack,
+
+            "enrichment": enrichment
 
         }
 

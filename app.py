@@ -1,8 +1,8 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-import shutil
 import os
+import shutil
 
 from src.analyzer import analyze_logs
 from src.threat_engine import calculate_risk
@@ -10,6 +10,7 @@ from src.detection_engine import detect_attacks
 from src.ioc_extractor import extract_iocs
 from src.mitre_mapping import map_detections_to_mitre
 from src.enrichment import enrich_security_findings
+from src.ai_analyst import generate_ai_assessment
 
 
 # ============================================================
@@ -19,12 +20,12 @@ from src.enrichment import enrich_security_findings
 app = FastAPI(
     title="SentinelAI API",
     description="AI Powered Cybersecurity Log Analysis API",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 
 # ============================================================
-# CORS Configuration
+# CORS
 # ============================================================
 
 app.add_middleware(
@@ -49,27 +50,13 @@ os.makedirs(
 
 
 # ============================================================
-# INTERNAL ANALYSIS PIPELINE
+# BUILD SECURITY REPORT
 # ============================================================
 
-def process_log(file_path: str):
+def build_security_report(results, lines):
 
     # --------------------------------------------------------
-    # Read log
-    # --------------------------------------------------------
-
-    with open(
-        file_path,
-        "r",
-        encoding="utf-8"
-    ) as logfile:
-
-        results = analyze_logs(
-            logfile
-        )
-
-    # --------------------------------------------------------
-    # Calculate risk
+    # 1. Calculate risk
     # --------------------------------------------------------
 
     risk = calculate_risk(
@@ -77,14 +64,11 @@ def process_log(file_path: str):
     )
 
     # --------------------------------------------------------
-    # Detect attacks
+    # 2. Detect attacks
     # --------------------------------------------------------
 
     detections = detect_attacks(
-        results.get(
-            "lines",
-            []
-        ),
+        lines,
         results.get(
             "login_attempts",
             {}
@@ -96,18 +80,15 @@ def process_log(file_path: str):
     )
 
     # --------------------------------------------------------
-    # Extract IOCs
+    # 3. Extract IOCs
     # --------------------------------------------------------
 
     iocs = extract_iocs(
-        results.get(
-            "lines",
-            []
-        )
+        lines
     )
 
     # --------------------------------------------------------
-    # MITRE ATT&CK mapping
+    # 4. Map detections to MITRE ATT&CK
     # --------------------------------------------------------
 
     mitre_attack = map_detections_to_mitre(
@@ -115,7 +96,15 @@ def process_log(file_path: str):
     )
 
     # --------------------------------------------------------
-    # Security enrichment
+    # 5. Enrich security findings
+    #
+    # IMPORTANT:
+    # enrich_security_findings() expects exactly:
+    #
+    # detections
+    # risk
+    # iocs
+    # mitre_attack
     # --------------------------------------------------------
 
     enrichment = enrich_security_findings(
@@ -125,7 +114,11 @@ def process_log(file_path: str):
         mitre_attack=mitre_attack
     )
 
-    return (
+    # --------------------------------------------------------
+    # 6. AI SOC assessment
+    # --------------------------------------------------------
+
+    ai_assessment = generate_ai_assessment(
         results,
         risk,
         detections,
@@ -133,6 +126,81 @@ def process_log(file_path: str):
         mitre_attack,
         enrichment
     )
+
+    # --------------------------------------------------------
+    # 7. Return complete SentinelAI report
+    # --------------------------------------------------------
+
+    return {
+
+        "status": "success",
+
+        "analysis": {
+
+            "total_events": results.get(
+                "total_events",
+                0
+            ),
+
+            "info_events": results.get(
+                "info",
+                0
+            ),
+
+            "warning_events": results.get(
+                "warning",
+                0
+            ),
+
+            "error_events": results.get(
+                "error",
+                0
+            ),
+
+            "critical_events": results.get(
+                "critical",
+                0
+            ),
+
+            "failed_logins": results.get(
+                "failed_logins",
+                0
+            ),
+
+            "suspicious_ips": results.get(
+                "suspicious_ips",
+                []
+            ),
+
+            "login_attempts": results.get(
+                "login_attempts",
+                {}
+            )
+        },
+
+        "risk": {
+
+            "level": risk.get(
+                "level",
+                "UNKNOWN"
+            ),
+
+            "score": risk.get(
+                "score",
+                0
+            )
+        },
+
+        "detections": detections,
+
+        "iocs": iocs,
+
+        "mitre_attack": mitre_attack,
+
+        "enrichment": enrichment,
+
+        "ai_assessment": ai_assessment
+    }
 
 
 # ============================================================
@@ -143,10 +211,17 @@ def process_log(file_path: str):
 def home():
 
     return {
+
         "application": "SentinelAI",
-        "version": "1.0.0",
+
+        "version": "2.0.0",
+
         "status": "Running",
-        "message": "Welcome to SentinelAI API"
+
+        "message": (
+            "SentinelAI cybersecurity "
+            "analysis API is running."
+        )
     }
 
 
@@ -158,13 +233,15 @@ def home():
 def health():
 
     return {
+
         "status": "healthy",
+
         "server": "online"
     }
 
 
 # ============================================================
-# ANALYZE DEFAULT SAMPLE LOG
+# ANALYZE SAMPLE LOG
 # ============================================================
 
 @app.get("/analyze")
@@ -177,115 +254,62 @@ def analyze():
             "sample_log.txt"
         )
 
-        if not os.path.exists(logfile):
+        if not os.path.exists(
+            logfile
+        ):
 
             raise HTTPException(
                 status_code=404,
                 detail="sample_log.txt not found."
             )
 
-        (
-            results,
-            risk,
-            detections,
-            iocs,
-            mitre_attack,
-            enrichment
-        ) = process_log(
-            logfile
+        # ----------------------------------------------------
+        # Read log
+        # ----------------------------------------------------
+
+        with open(
+            logfile,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            lines = file.readlines()
+
+        # ----------------------------------------------------
+        # Analyze
+        # ----------------------------------------------------
+
+        results = analyze_logs(
+            lines
         )
 
-        return {
+        # ----------------------------------------------------
+        # Build report
+        # ----------------------------------------------------
 
-            "status": "success",
-
-            "analysis": {
-
-                "total_events": results.get(
-                    "total_events",
-                    0
-                ),
-
-                "info_events": results.get(
-                    "info",
-                    0
-                ),
-
-                "warning_events": results.get(
-                    "warning",
-                    0
-                ),
-
-                "error_events": results.get(
-                    "error",
-                    0
-                ),
-
-                "critical_events": results.get(
-                    "critical",
-                    0
-                ),
-
-                "failed_logins": results.get(
-                    "failed_logins",
-                    0
-                ),
-
-                "suspicious_ips": results.get(
-                    "suspicious_ips",
-                    []
-                ),
-
-                "login_attempts": results.get(
-                    "login_attempts",
-                    {}
-                )
-
-            },
-
-            "risk": {
-
-                "level": risk.get(
-                    "level",
-                    "UNKNOWN"
-                ),
-
-                "score": risk.get(
-                    "score",
-                    0
-                )
-
-            },
-
-            "detections": detections,
-
-            "iocs": iocs,
-
-            "mitre_attack": mitre_attack,
-
-            "enrichment": enrichment
-
-        }
+        return build_security_report(
+            results,
+            lines
+        )
 
     except HTTPException:
 
         raise
 
-    except Exception as e:
+    except Exception as exc:
 
         return {
 
             "status": "error",
 
-            "error": type(e).__name__,
+            "error": type(exc).__name__,
 
-            "message": str(e)
-
+            "message": str(exc)
         }
 
 
 # ============================================================
-# UPLOAD AND ANALYZE LOG FILE
+# UPLOAD AND ANALYZE LOG
 # ============================================================
 
 @app.post("/upload-log")
@@ -320,7 +344,7 @@ async def upload_log(
         )
 
         # ----------------------------------------------------
-        # Save uploaded log
+        # Save file
         # ----------------------------------------------------
 
         with open(
@@ -334,106 +358,53 @@ async def upload_log(
             )
 
         # ----------------------------------------------------
-        # Process uploaded log
+        # Read file
         # ----------------------------------------------------
 
-        (
-            results,
-            risk,
-            detections,
-            iocs,
-            mitre_attack,
-            enrichment
-        ) = process_log(
-            filepath
+        with open(
+            filepath,
+            "r",
+            encoding="utf-8"
+        ) as logfile:
+
+            lines = logfile.readlines()
+
+        # ----------------------------------------------------
+        # Analyze
+        # ----------------------------------------------------
+
+        results = analyze_logs(
+            lines
         )
 
-        return {
+        # ----------------------------------------------------
+        # Build complete report
+        # ----------------------------------------------------
 
-            "status": "success",
+        report = build_security_report(
+            results,
+            lines
+        )
 
-            "filename": filename,
+        # ----------------------------------------------------
+        # Add filename
+        # ----------------------------------------------------
 
-            "analysis": {
+        report["filename"] = filename
 
-                "total_events": results.get(
-                    "total_events",
-                    0
-                ),
-
-                "info_events": results.get(
-                    "info",
-                    0
-                ),
-
-                "warning_events": results.get(
-                    "warning",
-                    0
-                ),
-
-                "error_events": results.get(
-                    "error",
-                    0
-                ),
-
-                "critical_events": results.get(
-                    "critical",
-                    0
-                ),
-
-                "failed_logins": results.get(
-                    "failed_logins",
-                    0
-                ),
-
-                "suspicious_ips": results.get(
-                    "suspicious_ips",
-                    []
-                ),
-
-                "login_attempts": results.get(
-                    "login_attempts",
-                    {}
-                )
-
-            },
-
-            "risk": {
-
-                "level": risk.get(
-                    "level",
-                    "UNKNOWN"
-                ),
-
-                "score": risk.get(
-                    "score",
-                    0
-                )
-
-            },
-
-            "detections": detections,
-
-            "iocs": iocs,
-
-            "mitre_attack": mitre_attack,
-
-            "enrichment": enrichment
-
-        }
+        return report
 
     except HTTPException:
 
         raise
 
-    except Exception as e:
+    except Exception as exc:
 
         return {
 
             "status": "error",
 
-            "error": type(e).__name__,
+            "error": type(exc).__name__,
 
-            "message": str(e)
-
+            "message": str(exc)
         }
